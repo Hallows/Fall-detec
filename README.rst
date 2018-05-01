@@ -35,19 +35,3 @@ If you do not know the MAC address of your device, use ``pygattlib`` to scan for
 
     # grab the first scanned device
     address = devices.items()[0][0]
-
-Once you have the device's MAC address, create a MetaWear object with the MAC address and connect to the device.
-
-.. code-block:: python
-
-    device = MetaWear(address)
-    status = device.connect()
-
-Upon a successful connection, you can begin calling any of the functions from the C++ SDK, for example, blinking the LED green.
-
-.. code-block:: python
-
-    pattern= LedPattern(repeat_count= Const.LED_REPEAT_INDEFINITELY)
-    libmetawear.mbl_mw_led_load_preset_pattern(byref(pattern), LedPreset.BLINK)
-    libmetawear.mbl_mw_led_write_pattern(device.board, byref(pattern), LedColor.GREEN)
-    libmetawear.mbl_mw_led_play(device.board)
