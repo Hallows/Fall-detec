@@ -30,6 +30,7 @@ print("Connected")
 print("Device information: " + str(device.info) + "\n")
 sleep(3.0)
 
+
 print("start LED process")
 pattern= LedPattern(repeat_count= Const.LED_REPEAT_INDEFINITELY)
 libmetawear.mbl_mw_led_load_preset_pattern(byref(pattern), LedPreset.SOLID)
