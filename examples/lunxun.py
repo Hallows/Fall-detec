@@ -4,9 +4,13 @@ from mbientlab.metawear.cbindings import *
 from gattlib import DiscoveryService
 from time import sleep
 from threading import Event
+import numpy as np
+from sklearn import svm
+from sklearn.externals import joblib
 
 import platform
 import sys
+import types
 
 if sys.version_info[0] == 2:
     range = xrange
@@ -14,6 +18,10 @@ if sys.version_info[0] == 2:
 selection = -1
 
 maclist = [] 
+
+print("Loading Neural Network Model, please wait......")
+clf = joblib.load('OSVM.pkl')
+print("Neural Network Model Load SUCCESS!")
 
 while selection == -1:
     service = DiscoveryService("hci0")
@@ -43,49 +51,86 @@ maclist.append(list(devices)[selection])
 
 print("save mac address as follows:",maclist[0],maclist[1])
 
-class State:
+afile = open("acc.txt", "w")
+gfile = open("gyo.txt", "w")
+
+class aState:
     def __init__(self, device):
         self.device = device
-        self.samples = 0
+        self.callback = FnVoid_DataP(self.data_handler)
+    def data_handler(self, data):
+        getdata=parse_value(data)
+        gfile.write("%s\n" % getdata)
+        result=str(getdata)
+        temp=result.split( )
+        ax=temp[2]
+        ay=temp[5]
+        ax=float(ax[:-1])+0.3
+        ay=float(ay[:-1])+0.15
+        print("x->%f y->%f"%(ax,ay))
+        nninput=np.array([ax,ay])
+        nninput=np.reshape(nninput,(-1,2))
+        if clf.predict(nninput) > -1:
+            print("Its Normal!")
+        else:
+            print("Warning!!!!")
+
+
+class gState:
+    def __init__(self, device):
+        self.device = device
         self.callback = FnVoid_DataP(self.data_handler)
 
     def data_handler(self, data):
-        print("%s -> %s" % (self.device.address, parse_value(data)))
-        self.samples+= 1
+        #print("GYO -> %s" % (parse_value(data)))
+        gfile.write("%s\n" % (parse_value(data)))
 
-states = []
-print(len(maclist))
+print("Connecting.....")
 
-for z in maclist:
-    d = MetaWear(z)
-    d.connect()
-    print("Connected to " + d.address)
-    states.append(State(d))
-    sleep(3.0)
-for s in states:
-    print("configuring device")
-    libmetawear.mbl_mw_settings_set_connection_parameters(s.device.board, 7.5, 7.5, 0, 6000)
-    libmetawear.mbl_mw_acc_set_odr(s.device.board, 25.0);
-    libmetawear.mbl_mw_acc_set_range(s.device.board, 16.0);
-    libmetawear.mbl_mw_acc_write_acceleration_config(s.device.board);
+d = MetaWear(maclist[0])
+d.connect()
+print("Connected to ACC device at MAC:" + d.address)
+a=aState(d)
+sleep(0.5)
 
-    signal = libmetawear.mbl_mw_acc_get_acceleration_data_signal(s.device.board)
-    libmetawear.mbl_mw_datasignal_subscribe(signal, s.callback)
+d = MetaWear(maclist[1])
+d.connect()
+print("Connected to GYO device at MAC:" + d.address)
+g=gState(d)
+sleep(0.5)
 
-    libmetawear.mbl_mw_acc_enable_acceleration_sampling(s.device.board);
-    libmetawear.mbl_mw_acc_start(s.device.board);
-    print("configuring ended")
 
-    sleep(3.0)
+print("configuring device..........")
+libmetawear.mbl_mw_settings_set_connection_parameters(a.device.board, 7.5, 7.5, 0, 6000)
+libmetawear.mbl_mw_acc_set_odr(a.device.board, 25.0);
+libmetawear.mbl_mw_acc_set_range(a.device.board, 16.0);
+libmetawear.mbl_mw_acc_write_acceleration_config(a.device.board);
 
-    libmetawear.mbl_mw_acc_stop(s.device.board)
-    libmetawear.mbl_mw_acc_disable_acceleration_sampling(s.device.board)
+asignal = libmetawear.mbl_mw_acc_get_acceleration_data_signal(a.device.board)
+libmetawear.mbl_mw_datasignal_subscribe(asignal, a.callback)
 
-    signal = libmetawear.mbl_mw_acc_get_acceleration_data_signal(s.device.board)
-    libmetawear.mbl_mw_datasignal_unsubscribe(signal)
-    libmetawear.mbl_mw_debug_disconnect(s.device.board)
+libmetawear.mbl_mw_acc_enable_acceleration_sampling(a.device.board);
+libmetawear.mbl_mw_acc_start(a.device.board);
+print("ACC config finished")
 
-    sleep(0.5)
+libmetawear.mbl_mw_settings_set_connection_parameters(g.device.board, 7.5, 7.5, 0, 6000)
+libmetawear.mbl_mw_gyro_bmi160_set_odr(g.device.board, GyroBmi160Odr._25Hz);
+libmetawear.mbl_mw_gyro_bmi160_set_range(g.device.board, GyroBmi160Range._500dps)
+libmetawear.mbl_mw_gyro_bmi160_write_config(g.device.board)
 
-    print("Total Samples Received")
-    print("%s -> %d" % (s.device.address, s.samples))
+gsignal = libmetawear.mbl_mw_gyro_bmi160_get_rotation_data_signal(g.device.board)
+libmetawear.mbl_mw_datasignal_subscribe(gsignal, g.callback)
+
+libmetawear.mbl_mw_gyro_bmi160_enable_rotation_sampling(g.device.board)
+libmetawear.mbl_mw_gyro_bmi160_start(g.device.board)
+print("GYRO config finished")
+
+sleep(10)
+
+libmetawear.mbl_mw_datasignal_unsubscribe(asignal)
+libmetawear.mbl_mw_datasignal_unsubscribe(gsignal)
+libmetawear.mbl_mw_acc_stop(a.device.board)
+libmetawear.mbl_mw_gyro_bmi160_stop(g.device.board)
+libmetawear.mbl_mw_debug_disconnect(a.device.board)
+libmetawear.mbl_mw_debug_disconnect(g.device.board)
+print("Disconnected!")
